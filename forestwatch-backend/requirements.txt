@@ -1,0 +1,9 @@
+fastapi
+uvicorn
+python-dotenv
+numpy
+requests
+earthengine-api
+geemap
+rasterio
+google-generativeai
