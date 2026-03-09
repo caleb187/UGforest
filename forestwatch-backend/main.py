@@ -1,6 +1,8 @@
 import asyncio
+import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
+from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
@@ -10,6 +12,8 @@ from models import (
     AnalyzeRequest, AnalyzeResponse,
     CompareRequest, CompareResponse,
     ForestStats, RiskAlert,
+    AlertsResponse, ScanAlert,
+    InsightRequest, InsightResponse,
 )
 from analyzer import (
     FORESTS, STAT_KEYS,
@@ -22,14 +26,25 @@ from analyzer import (
     generate_forest_insight,
 )
 
+from scanner import start_scheduler, stop_scheduler, get_all_alerts, get_recent_alerts, run_weekly_scan
+
 # ============================================================================
 # APP
 # ============================================================================
+
+@asynccontextmanager
+async def lifespan(app):
+    """Start the weekly scanner on startup, stop on shutdown."""
+    start_scheduler()
+    yield
+    stop_scheduler()
+
 
 app = FastAPI(
     title="ForestWatch AI",
     description="AI-powered deforestation detection for Uganda",
     version="1.0.0",
+    lifespan=lifespan,
 )
 
 app.add_middleware(
@@ -64,7 +79,7 @@ def root():
         "system":  "ForestWatch AI",
         "status":  "online",
         "version": "1.0.0",
-        "endpoints": ["/analyze", "/compare", "/tiles", "/forests", "/health", "/docs"],
+        "endpoints": ["/analyze", "/compare", "/tiles", "/forests", "/alerts", "/alerts/latest", "/scan/trigger", "/health", "/docs"],
     }
 
 
@@ -84,7 +99,7 @@ def list_forests():
 
 @app.post("/analyze", response_model=AnalyzeResponse)
 def analyze_forest(req: AnalyzeRequest):
-    """Analyze forest health at a location with AI insights."""
+    """Analyze forest health at a location (no AI — use /insight for that)."""
     t0 = time.time()
 
     try:
@@ -97,21 +112,6 @@ def analyze_forest(req: AnalyzeRequest):
         alert = score_to_alert(score)
         name  = get_forest_name(req.lat, req.lng)
 
-        insight_raw = generate_forest_insight(
-            location_name=name, lat=req.lat, lng=req.lng, year=req.year,
-            stats=data, ndvi_mean=data["ndvi_mean"],
-            alert_level=alert["level"], risk_score=score,
-        )
-
-        # Robust insight validation
-        insight = None
-        if insight_raw:
-            try:
-                from models import ForestInsight
-                insight = ForestInsight(**insight_raw)
-            except Exception as e:
-                print(f"✗ Insight validation failed: {e}")
-
         print(f"✓ Analyze {time.time()-t0:.2f}s")
 
         return AnalyzeResponse(
@@ -119,9 +119,7 @@ def analyze_forest(req: AnalyzeRequest):
             year=req.year,
             stats=_build_stats(data),
             alert=RiskAlert(**alert),
-            ndvi_mean=data["ndvi_mean"],
             data_source="Sentinel-2 / GEE",
-            insight=insight,
         )
     except Exception as e:
         print(f"✗ Response error: {e}")
@@ -130,7 +128,7 @@ def analyze_forest(req: AnalyzeRequest):
 
 @app.post("/compare", response_model=CompareResponse)
 async def compare_years(req: CompareRequest):
-    """Compare forest health between two years — parallel GEE calls."""
+    """Compare forest health between two years — parallel GEE calls (no AI)."""
     t0 = time.time()
     loop = asyncio.get_event_loop()
 
@@ -158,31 +156,6 @@ async def compare_years(req: CompareRequest):
             else f"Forest cover remained stable between {req.year_a} and {req.year_b}."
         )
 
-        insight_raw = generate_forest_insight(
-            location_name=name, lat=req.lat, lng=req.lng, year=req.year_b,
-            stats={
-                'healthy_pct_a': data_a['healthy_pct'],
-                'healthy_pct_b': data_b['healthy_pct'],
-                'healthy_pct': data_b['healthy_pct'],
-                'at_risk_pct': data_b['at_risk_pct'],
-                'degraded_pct': data_b['degraded_pct'],
-                'cleared_pct': data_b['cleared_pct'],
-                'total_area_ha': data_a['total_area_ha'],
-            },
-            ndvi_mean=data_b["ndvi_mean"],
-            alert_level=alert["level"], risk_score=score,
-            year_a=req.year_a, year_b=req.year_b,
-            forest_lost_ha=forest_lost_ha,
-        )
-
-        insight = None
-        if insight_raw:
-            try:
-                from models import ForestInsight
-                insight = ForestInsight(**insight_raw)
-            except Exception as e:
-                print(f"✗ Insight validation failed: {e}")
-
         print(f"✓ Compare {time.time()-t0:.2f}s")
 
         return CompareResponse(
@@ -194,11 +167,47 @@ async def compare_years(req: CompareRequest):
             forest_lost_ha=forest_lost_ha,
             alert=RiskAlert(**alert),
             change_summary=change_summary,
-            insight=insight,
         )
     except Exception as e:
         print(f"✗ Response error: {e}")
         raise HTTPException(500, f"Internal server error: {e}")
+
+
+@app.post("/insight", response_model=InsightResponse)
+def get_insight(req: InsightRequest):
+    """On-demand AI insight — only called when user clicks 'AI Insights'."""
+    t0 = time.time()
+    try:
+        stats = {
+            'healthy_pct':  req.healthy_pct,
+            'at_risk_pct':  req.at_risk_pct,
+            'degraded_pct': req.degraded_pct,
+            'cleared_pct':  req.cleared_pct,
+            'total_area_ha': req.total_area_ha,
+        }
+        if req.healthy_pct_a is not None:
+            stats['healthy_pct_a'] = req.healthy_pct_a
+        if req.healthy_pct_b is not None:
+            stats['healthy_pct_b'] = req.healthy_pct_b
+
+        insight_raw = generate_forest_insight(
+            location_name=req.location_name,
+            lat=req.lat, lng=req.lng, year=req.year,
+            stats=stats, ndvi_mean=req.ndvi_mean,
+            alert_level=req.alert_level, risk_score=req.risk_score,
+            year_a=req.year_a, year_b=req.year_b,
+            forest_lost_ha=req.forest_lost_ha,
+        )
+
+        if insight_raw:
+            from models import ForestInsight
+            print(f"✓ Insight {time.time()-t0:.2f}s")
+            return InsightResponse(insight=ForestInsight(**insight_raw))
+
+        return InsightResponse(error="Gemini returned no insight")
+    except Exception as e:
+        print(f"✗ Insight error: {e}")
+        return InsightResponse(error=str(e))
 
 
 @app.post("/tiles")
@@ -211,3 +220,28 @@ def get_tiles(req: TilesRequest):
         raise HTTPException(500, f"Tile generation failed: {e}")
     print(f"✓ Tiles {time.time()-t0:.2f}s")
     return tiles
+
+
+# ============================================================================
+# ALERT ENDPOINTS
+# ============================================================================
+
+@app.get("/alerts", response_model=AlertsResponse)
+def list_alerts():
+    """Return all automated scan alerts, newest first."""
+    alerts = get_all_alerts()
+    return AlertsResponse(alerts=[ScanAlert(**a) for a in alerts], count=len(alerts))
+
+
+@app.get("/alerts/latest", response_model=AlertsResponse)
+def list_latest_alerts():
+    """Return alerts from the last 7 days."""
+    alerts = get_recent_alerts(days=7)
+    return AlertsResponse(alerts=[ScanAlert(**a) for a in alerts], count=len(alerts))
+
+
+@app.get("/scan/trigger")
+def trigger_scan():
+    """Manually trigger a forest scan (useful for testing)."""
+    threading.Thread(target=run_weekly_scan, daemon=True).start()
+    return {"status": "scan_started", "message": "Scan running in background. Check /alerts for results."}

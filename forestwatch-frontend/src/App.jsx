@@ -4,7 +4,8 @@ import StatsPanel   from './components/StatsPanel'
 import ComparePanel from './components/ComparePanel'
 import AlertBadge   from './components/AlertBadge'
 import InsightPanel from './components/InsightPanel'
-import { analyzeForest, compareForest, getMapTiles } from './api'
+import AlertsPanel  from './components/AlertsPanel'
+import { analyzeForest, compareForest, getMapTiles, getLatestAlerts } from './api'
 
 export default function App() {
   const [selectedPoint, setSelectedPoint] = useState(null)
@@ -21,6 +22,8 @@ export default function App() {
   const [error,         setError]         = useState(null)
   const [drawerOpen,    setDrawerOpen]    = useState(false)
   const [resultsOpen,   setResultsOpen]   = useState(false)
+  const [alertsData,    setAlertsData]    = useState(null)
+  const [alertsLoading, setAlertsLoading] = useState(false)
 
   const handleMapClick = (lat, lng) => {
     setSelectedPoint([lat, lng])
@@ -31,7 +34,7 @@ export default function App() {
 
   // Auto-refresh tiles and analysis when parameters or selected point change
   useEffect(() => {
-    if (!selectedPoint) return
+    if (!selectedPoint || activeTab === 'alerts') return
 
     const fetchData = async () => {
       const [lat, lng] = selectedPoint
@@ -73,6 +76,17 @@ export default function App() {
 
     fetchData()
   }, [selectedPoint, activeTab, year, yearA, yearB, radiusKm])
+
+  // Fetch alerts when the alerts tab is selected
+  useEffect(() => {
+    if (activeTab !== 'alerts') return
+    setAlertsLoading(true)
+    setResultsOpen(true)
+    getLatestAlerts()
+      .then(data => setAlertsData(data.alerts))
+      .catch(() => setError('Could not load alerts. Is the backend running?'))
+      .finally(() => setAlertsLoading(false))
+  }, [activeTab])
 
 
   return (
@@ -211,7 +225,7 @@ export default function App() {
         }}>
           {/* Tabs */}
           <div style={{ display: 'flex', borderBottom: '1px solid rgba(34,197,94,0.08)', padding: '8px 0' }}>
-            {[['analyze', '🔍 Analyze'], ['compare', '📊 Compare']].map(([key, label]) => (
+            {[['analyze', '🔍 Analyze'], ['compare', '📊 Compare'], ['alerts', '🔔 Alerts']].map(([key, label]) => (
               <button key={key} onClick={() => setActiveTab(key)} style={{
                 flex: 1,
                 padding: '12px 16px',
@@ -228,7 +242,8 @@ export default function App() {
             ))}
           </div>
 
-          {/* Controls */}
+          {/* Controls — hidden on alerts tab */}
+          {activeTab !== 'alerts' && (
           <div style={{ padding: '16px', borderBottom: '1px solid rgba(34,197,94,0.08)' }}>
             {activeTab === 'analyze' ? (
               <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
@@ -331,6 +346,7 @@ export default function App() {
               </div>
             )}
           </div>
+          )}
         </div>
 
         {/* Secondary Drawer: Results Panel (Spawns to the right of the Control Drawer) */}
@@ -344,7 +360,7 @@ export default function App() {
           borderRight: '1px solid rgba(34,197,94,0.2)',
           display: 'flex',
           flexDirection: 'column',
-          transform: resultsOpen && (selectedPoint || loading) ? 'translateX(0)' : 'translateX(-100%)',
+          transform: resultsOpen && (selectedPoint || loading || activeTab === 'alerts') ? 'translateX(0)' : 'translateX(-100%)',
           transition: 'all 0.4s cubic-bezier(0.4, 0, 0.2, 1)',
           zIndex: 998, // Just behind main drawer
           backdropFilter: 'blur(10px)',
@@ -368,7 +384,7 @@ export default function App() {
               alignItems: 'center',
               gap: 8
             }}>
-              {loading ? '⏳ PROCESSING' : '📋 ANALYSIS RESULTS'}
+              {loading || alertsLoading ? '⏳ PROCESSING' : activeTab === 'alerts' ? '🔔 AUTOMATED ALERTS' : '📋 ANALYSIS RESULTS'}
             </div>
             <button onClick={() => setResultsOpen(false)} style={{
               background: 'transparent',
@@ -448,14 +464,30 @@ export default function App() {
                   loading={loading}
                 />
                 <InsightPanel
-                  insight={analyzeResult?.insight}
-                  loading={loading}
+                  analysisData={analyzeResult ? {
+                    lat: analyzeResult.location.lat,
+                    lng: analyzeResult.location.lng,
+                    year: analyzeResult.year,
+                    location_name: analyzeResult.location.name || 'Unknown Forest',
+                    healthy_pct: analyzeResult.stats.healthy_pct,
+                    at_risk_pct: analyzeResult.stats.at_risk_pct,
+                    degraded_pct: analyzeResult.stats.degraded_pct,
+                    cleared_pct: analyzeResult.stats.cleared_pct,
+                    total_area_ha: analyzeResult.stats.total_area_ha,
+                    ndvi_mean: analyzeResult.stats.ndvi_mean,
+                    alert_level: analyzeResult.alert.level,
+                    risk_score: analyzeResult.alert.score,
+                  } : null}
                 />
               </div>
             )}
             
             {activeTab === 'compare' && compareResult && !loading && (
               <ComparePanel data={compareResult} loading={loading} />
+            )}
+
+            {activeTab === 'alerts' && (
+              <AlertsPanel alerts={alertsData} loading={alertsLoading} />
             )}
           </div>
         </div>

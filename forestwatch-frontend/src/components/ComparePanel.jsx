@@ -1,5 +1,6 @@
 import AlertBadge from './AlertBadge'
 import StatBar   from './StatBar'
+import InsightPanel from './InsightPanel'
 
 export default function ComparePanel({ data, loading }) {
   if (loading) return (
@@ -24,6 +25,27 @@ export default function ComparePanel({ data, loading }) {
 
   const lost   = data.forest_lost_pct
   const lostHa = data.forest_lost_ha
+
+  // Build insight request data for on-demand AI
+  const insightData = data.alert ? {
+    lat: data.location.lat,
+    lng: data.location.lng,
+    year: data.year_b,
+    location_name: data.location.name || 'Unknown Forest',
+    healthy_pct: data.stats_b.healthy_pct,
+    at_risk_pct: data.stats_b.at_risk_pct,
+    degraded_pct: data.stats_b.degraded_pct,
+    cleared_pct: data.stats_b.cleared_pct,
+    total_area_ha: data.stats_a.total_area_ha,
+    ndvi_mean: data.stats_b.ndvi_mean,
+    alert_level: data.alert.level,
+    risk_score: data.alert.score,
+    year_a: data.year_a,
+    year_b: data.year_b,
+    forest_lost_ha: data.forest_lost_ha,
+    healthy_pct_a: data.stats_a.healthy_pct,
+    healthy_pct_b: data.stats_b.healthy_pct,
+  } : null
 
   return (
     <div className="fade-up" style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
@@ -128,85 +150,8 @@ export default function ComparePanel({ data, loading }) {
         {data.change_summary}
       </div>
 
-      {/* AI Insight */}
-      {/* AI Analysis Section */}
-      <div style={{
-        marginTop: 20,
-        background: 'rgba(30, 41, 59, 0.5)',
-        borderRadius: 12,
-        padding: 16,
-        border: '1px solid rgba(148, 163, 184, 0.1)',
-      }}>
-        <div style={{
-          fontFamily: "'Space Mono', monospace",
-          fontSize: 11,
-          fontWeight: 600,
-          color: '#22c55e',
-          letterSpacing: 1.2,
-          marginBottom: 12,
-          textTransform: 'uppercase',
-          display: 'flex',
-          alignItems: 'center',
-          gap: 6,
-        }}>
-          🤖 AI ANALYSIS
-        </div>
-
-        {!data.insight ? (
-          <div style={{
-            fontSize: 13, color: '#fca5a5', lineHeight: 1.6,
-            padding: 12, background: 'rgba(239, 68, 68, 0.1)',
-            borderRadius: 8, border: '1px solid rgba(239, 68, 68, 0.2)'
-          }}>
-            AI Insights currently unavailable (Quota exceeded or API error). Check server logs.
-          </div>
-        ) : (
-          <>
-            <div style={{
-              fontSize: 13, color: '#cbd5e1', lineHeight: 1.7,
-              marginBottom: 12, fontWeight: 500,
-              borderBottom: '1px solid rgba(34,197,94,0.1)', paddingBottom: 12,
-            }}>
-              {data.insight.summary}
-            </div>
-
-            {data.insight.likely_cause && (
-              <div style={{ marginBottom: 12 }}>
-                <div style={{ fontSize: 11, fontWeight: 600, color: '#fca5a5', marginBottom: 6, display: 'flex', alignItems: 'center', gap: 6 }}>
-                  ⚡ Likely Cause
-                </div>
-                <div style={{ fontSize: 12, color: '#d1fae5', lineHeight: 1.6 }}>
-                  {data.insight.likely_cause}
-                </div>
-              </div>
-            )}
-
-            {data.insight.trend_assessment && (
-              <div style={{ marginBottom: 12 }}>
-                <div style={{ fontSize: 11, fontWeight: 600, color: '#93c5fd', marginBottom: 6, display: 'flex', alignItems: 'center', gap: 6 }}>
-                  📈 Trend Assessment
-                </div>
-                <div style={{ fontSize: 12, color: '#d1fae5', lineHeight: 1.6 }}>
-                  {data.insight.trend_assessment}
-                </div>
-              </div>
-            )}
-
-            {data.insight.recommended_actions?.length > 0 && (
-              <div>
-                <div style={{ fontSize: 11, fontWeight: 600, color: '#86efac', marginBottom: 8, display: 'flex', alignItems: 'center', gap: 6 }}>
-                  ✓ Recommended Actions
-                </div>
-                <ul style={{ margin: 0, paddingLeft: 20, fontSize: 12, color: '#d1fae5', lineHeight: 1.7 }}>
-                  {data.insight.recommended_actions.map((action, idx) => (
-                    <li key={idx} style={{ marginBottom: 6 }}>{action}</li>
-                  ))}
-                </ul>
-              </div>
-            )}
-          </>
-        )}
-      </div>
+      {/* On-demand AI Insight */}
+      <InsightPanel analysisData={insightData} />
     </div>
   )
 }

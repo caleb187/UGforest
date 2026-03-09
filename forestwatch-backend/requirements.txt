@@ -7,3 +7,4 @@ earthengine-api
 geemap
 rasterio
 google-generativeai
+apscheduler

@@ -23,3 +23,9 @@ export const getMapTiles = (lat, lng, year_a, year_b, radius_km = 10) =>
 
 export const listForests = () =>
   api('GET', '/forests').then(d => d.forests)
+
+export const getLatestAlerts = () =>
+  api('GET', '/alerts/latest')
+
+export const getInsight = (data) =>
+  api('POST', '/insight', data)

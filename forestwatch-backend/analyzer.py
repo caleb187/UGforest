@@ -28,7 +28,7 @@ FORESTS = {
     "Queen Elizabeth":  (-0.20, 29.90),
 }
 
-STAT_KEYS = ("healthy_pct", "at_risk_pct", "degraded_pct", "cleared_pct", "total_area_ha")
+STAT_KEYS = ("healthy_pct", "at_risk_pct", "degraded_pct", "cleared_pct", "total_area_ha", "ndvi_mean")
 
 # ============================================================================
 # INITIALIZATION
@@ -58,8 +58,8 @@ def _init_gemini():
             print("✗ GEMINI_API_KEY not set")
             return None
         genai.configure(api_key=api_key)
-        model = genai.GenerativeModel('gemini-2.0-flash')
-        print("✓ Gemini API configured (gemini-2.0-flash)")
+        model = genai.GenerativeModel('gemini-flash-latest')
+        print("✓ Gemini API configured (gemini-flash-latest)")
         return model
     except Exception as e:
         print(f"✗ Gemini initialization failed: {e}")
@@ -294,6 +294,10 @@ def get_forest_name(lat: float, lng: float) -> str:
 # AI INSIGHTS (Gemini)
 # ============================================================================
 
+_insight_cache = {}
+_insight_cache_lock = threading.Lock()
+
+
 def generate_forest_insight(
     location_name: str, lat: float, lng: float, year: int,
     stats: dict, ndvi_mean: float, alert_level: str, risk_score: int,
@@ -303,6 +307,13 @@ def generate_forest_insight(
     if gemini is None:
         print("✗ Gemini not initialized — check GEMINI_API_KEY")
         return None
+
+    # Cache key: rounded lat/lng + year (so same-area clicks reuse the result)
+    cache_key = f"insight_{round(lat, 2)}_{round(lng, 2)}_{year}"
+    with _insight_cache_lock:
+        if cache_key in _insight_cache:
+            print(f"✓ Insight cache hit: {cache_key}")
+            return _insight_cache[cache_key]
 
     change_ctx = ""
     if forest_lost_ha is not None:
@@ -356,7 +367,10 @@ Respond ONLY with this JSON (no markdown):
     try:
         text = gemini.generate_content(prompt).text.strip()
         text = text.replace('```json', '').replace('```', '').strip()
-        return json.loads(text)
+        result = json.loads(text)
+        with _insight_cache_lock:
+            _insight_cache[cache_key] = result
+        return result
     except Exception as e:
         print(f"✗ Gemini error: {e}")
         return None
