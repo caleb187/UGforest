@@ -58,8 +58,8 @@ def _init_gemini():
             print("✗ GEMINI_API_KEY not set")
             return None
         genai.configure(api_key=api_key)
-        model = genai.GenerativeModel('gemini-flash-latest')
-        print("✓ Gemini API configured (gemini-flash-latest)")
+        model = genai.GenerativeModel('gemini-2.5-flash-lite')
+        print("✓ Gemini API configured (gemini-2.5-flash-lite)")
         return model
     except Exception as e:
         print(f"✗ Gemini initialization failed: {e}")

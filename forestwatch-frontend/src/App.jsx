@@ -5,6 +5,7 @@ import ComparePanel from './components/ComparePanel'
 import AlertBadge   from './components/AlertBadge'
 import InsightPanel from './components/InsightPanel'
 import AlertsPanel  from './components/AlertsPanel'
+import TimeSeriesPanel from './components/TimeSeriesPanel'
 import { analyzeForest, compareForest, getMapTiles, getLatestAlerts } from './api'
 
 export default function App() {
@@ -16,27 +17,39 @@ export default function App() {
   const [loading,       setLoading]       = useState(false)
   const [activeTab,     setActiveTab]     = useState('analyze')
   const [year,          setYear]          = useState(2024)
-  const [yearA,         setYearA]         = useState(2020)
-  const [yearB,         setYearB]         = useState(2024)
+  const [yearA,         setYearA]         = useState("")
+  const [yearB,         setYearB]         = useState("")
   const [radiusKm,      setRadiusKm]      = useState(5)
   const [error,         setError]         = useState(null)
   const [drawerOpen,    setDrawerOpen]    = useState(false)
   const [resultsOpen,   setResultsOpen]   = useState(false)
   const [alertsData,    setAlertsData]    = useState(null)
   const [alertsLoading, setAlertsLoading] = useState(false)
+  const [showTimeSeries,setShowTimeSeries]= useState(false)
 
   const handleMapClick = (lat, lng) => {
     setSelectedPoint([lat, lng])
+    setShowTimeSeries(false)
   }
 
   const alertLevel = analyzeResult?.alert?.level
                   || compareResult?.alert?.level
 
-  // Auto-refresh tiles and analysis when parameters or selected point change
   useEffect(() => {
     if (!selectedPoint || activeTab === 'alerts') return
+    
+    // Prevent compare fetch if years are not selected
+    if (activeTab === 'compare' && (yearA === "" || yearB === "")) {
+      setError("Please select both years to compare.")
+      setTiles(null)
+      setAnalyzeResult(null)
+      setCompareResult(null)
+      setShowTimeSeries(false)
+      return
+    }
 
     const fetchData = async () => {
+
       const [lat, lng] = selectedPoint
       setError(null)
       setLoading(true)
@@ -305,7 +318,7 @@ export default function App() {
                     fontWeight: 600
                   }}>
                     {lbl} — <span style={{ color: '#22c55e', fontWeight: 700 }}>{val}</span>
-                    <select value={val} onChange={e => setter(+e.target.value)} style={{
+                    <select value={val} onChange={e => setter(e.target.value === "" ? "" : +e.target.value)} style={{
                       display: 'block',
                       width: '100%',
                       marginTop: 6,
@@ -318,6 +331,7 @@ export default function App() {
                       cursor: 'pointer',
                       fontWeight: 500,
                     }}>
+                      <option value="" disabled>Select year</option>
                       {Array.from({length: 24}, (_, i) => 2003 + i).reverse().map(y =>
                         <option key={y} value={y} style={{ color: '#000', background: '#fff' }}>{y}</option>
                       )}
@@ -343,6 +357,26 @@ export default function App() {
                     }}
                   />
                 </label>
+                
+                <button
+                  onClick={() => setShowTimeSeries(true)}
+                  disabled={!selectedPoint || yearA === "" || yearB === ""}
+                  style={{
+                    marginTop: 8,
+                    padding: '12px',
+                    background: (!selectedPoint || yearA === "" || yearB === "") ? 'rgba(34,197,94,0.05)' : 'linear-gradient(135deg, rgba(34,197,94,0.2) 0%, rgba(22,163,74,0.15) 100%)',
+                    border: `1px solid ${(!selectedPoint || yearA === "" || yearB === "") ? 'rgba(34,197,94,0.1)' : 'rgba(34,197,94,0.4)'}`,
+                    borderRadius: 8,
+                    color: (!selectedPoint || yearA === "" || yearB === "") ? '#4b5563' : '#4ade80',
+                    fontFamily: "'Inter', sans-serif",
+                    fontSize: 12,
+                    fontWeight: 600,
+                    cursor: (!selectedPoint || yearA === "" || yearB === "") ? 'not-allowed' : 'pointer',
+                    transition: 'all 0.3s ease',
+                  }}
+                >
+                  📈 View Time Series
+                </button>
               </div>
             )}
           </div>
@@ -502,6 +536,17 @@ export default function App() {
             tiles={tiles}
             tilesLoading={tilesLoading}
           />
+          
+          {showTimeSeries && selectedPoint && activeTab === 'compare' && yearA !== "" && yearB !== "" && (
+            <TimeSeriesPanel
+              lat={selectedPoint[0]}
+              lng={selectedPoint[1]}
+              startYear={yearA}
+              endYear={yearB}
+              radiusKm={radiusKm}
+              onClose={() => setShowTimeSeries(false)}
+            />
+          )}
         </div>
       </div>
     </div>

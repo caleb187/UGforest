@@ -1,6 +1,6 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { MapContainer, TileLayer, Marker,
-         Circle, useMapEvents } from 'react-leaflet'
+         Circle, GeoJSON, useMapEvents } from 'react-leaflet'
 import L from 'leaflet'
 
 delete L.Icon.Default.prototype._getIconUrl
@@ -9,6 +9,7 @@ L.Icon.Default.mergeOptions({
   iconUrl:       'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/images/marker-icon.png',
   shadowUrl:     'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/images/marker-shadow.png',
 })
+
 
 const RISK_COLORS = {
   LOW:      '#22c55e',
@@ -96,8 +97,21 @@ export default function Map({
   const color   = RISK_COLORS[alertLevel] || '#22c55e'
   const hasTiles = !!tiles
 
+  const [ugandaGeojson, setUgandaGeojson] = useState(null)
+  
+  useEffect(() => {
+    fetch('https://raw.githubusercontent.com/datasets/geo-countries/master/data/countries.geojson')
+      .then(r => r.json())
+      .then(data => {
+        const ugandaFeature = data.features.find(f => f.properties.ADMIN === 'Uganda')
+        if (ugandaFeature) setUgandaGeojson(ugandaFeature)
+      })
+      .catch(e => console.error("Failed to load Uganda GeoJSON:", e))
+  }, [])
+
   const [layers, setLayers] = useState({
     satellite: true,
+
     ndvi:      false,
     change:    false,
     risk:      false,
@@ -286,7 +300,15 @@ export default function Map({
         {layers.change && tiles?.change && <TileLayer url={tiles.change} opacity={0.8} />}
         {layers.risk   && tiles?.risk   && <TileLayer url={tiles.risk}   opacity={0.8} />}
 
+        {ugandaGeojson && (
+          <GeoJSON 
+            data={ugandaGeojson} 
+            style={{ color: '#4ade80', weight: 1.5, fillOpacity: 0 }} 
+          />
+        )}
+
         <ClickHandler onMapClick={onMapClick} />
+
 
         {FORESTS.map(f => (
           <Marker
