@@ -311,6 +311,55 @@ def get_map_tiles(lat: float, lng: float, year_a: int, year_b: int, radius_km: f
                 'year_a': year_a, 'year_b': year_b, 'error': str(e)}
 
 
+def get_basemap_tiles() -> dict:
+    """Get a GEE tile URL for the Uganda-wide Sentinel-2 2024 natural colour composite.
+
+    Returns {"url": "https://..."}. Cached for 1 hour.
+    """
+    init_gee()
+
+    cache_key = "basemap_2024"
+    cached = _cache_get(cache_key)
+    if cached:
+        return cached
+
+    try:
+        # Uganda bounding box (W, S, E, N)
+        uganda = ee.Geometry.Rectangle([29.5, -1.5, 35.1, 4.3])
+
+        s2 = (
+            ee.ImageCollection('COPERNICUS/S2_SR_HARMONIZED')
+            .filterBounds(uganda)
+            .filterDate('2024-01-01', '2024-12-31')
+            .filter(ee.Filter.lt('CLOUDY_PIXEL_PERCENTAGE', 20))
+        )
+
+        if s2.size().getInfo() == 0:
+            # Fallback to Landsat 8 2024
+            l8 = (
+                ee.ImageCollection('LANDSAT/LC08/C02/T1_L2')
+                .filterBounds(uganda)
+                .filterDate('2024-01-01', '2024-12-31')
+                .filter(ee.Filter.lt('CLOUD_COVER', 20))
+            )
+            composite = l8.median().select(['SR_B4', 'SR_B3', 'SR_B2'])
+        else:
+            composite = s2.median().select(['B4', 'B3', 'B2'])
+
+        url = composite.getMapId(
+            {'min': 0, 'max': 3000, 'gamma': 1.4}
+        )['tile_fetcher'].url_format
+
+        result = {'url': url}
+        _cache_set(cache_key, result)
+        print("✓ Basemap tile URL generated")
+        return result
+
+    except Exception as e:
+        print(f"✗ Basemap error: {e}")
+        return {'url': '', 'error': str(e)}
+
+
 # ============================================================================
 # LOCATION UTILITIES
 # ============================================================================

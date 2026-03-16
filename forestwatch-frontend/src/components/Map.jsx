@@ -19,11 +19,11 @@ const RISK_COLORS = {
 }
 
 const FORESTS = [
-  { name: 'Mabira Forest',   lat:  0.45, lng: 32.95 },
-  { name: 'Budongo Forest',  lat:  1.73, lng: 31.55 },
-  { name: 'Kibale Forest',   lat:  0.50, lng: 30.36 },
-  { name: 'Bwindi Forest',   lat: -1.03, lng: 29.68 },
-  { name: 'Queen Elizabeth', lat: -0.20, lng: 29.90 },
+  { name: 'Mabira Forest',              lat:  0.45, lng: 32.95 },
+  { name: 'Budongo Forest',             lat:  1.73, lng: 31.55 },
+  { name: 'Kibale Forest',              lat:  0.50, lng: 30.36 },
+  { name: 'Bwindi Forest',              lat: -1.03, lng: 29.68 },
+  { name: 'Queen Elizabeth Nat. Park',  lat: -0.20, lng: 29.90 },
 ]
 
 const LEGENDS = {
@@ -44,6 +44,29 @@ const LEGENDS = {
     ['DEGRADED', '#f97316'],
     ['CLEARED',  '#ef4444'],
   ],
+}
+
+// ── Forest label divIcon ──────────────────────────────────────────────────────
+function makeForestLabel(name) {
+  return L.divIcon({
+    className: '',
+    iconAnchor: [0, 0],
+    html: `<div style="
+      background: rgba(6,13,7,0.85);
+      border: 1px solid rgba(34,197,94,0.45);
+      border-radius: 20px;
+      padding: 3px 10px;
+      font-family: 'Space Mono', monospace;
+      font-size: 10px;
+      font-weight: 600;
+      color: #4ade80;
+      letter-spacing: 0.5px;
+      white-space: nowrap;
+      pointer-events: none;
+      backdrop-filter: blur(6px);
+      box-shadow: 0 2px 8px rgba(0,0,0,0.5);
+    ">${name}</div>`,
+  })
 }
 
 function LayerBtn({ label, active, color, disabled, onClick }) {
@@ -92,7 +115,10 @@ function ClickHandler({ onMapClick }) {
 function FlyTo({ point }) {
   const map = useMap()
   useEffect(() => {
-    if (point) map.flyTo(point, 16, { duration: 1.2 })
+    if (!point) return
+    // point can be [lat, lng] or [lat, lng, zoom]
+    const zoom = point[2] ?? 16
+    map.flyTo([point[0], point[1]], zoom, { duration: 1.2 })
   }, [point, map])
   return null
 }
@@ -102,6 +128,7 @@ export default function Map({
   onMapClick, radiusKm,
   tiles, tilesLoading,
   flyToPoint,
+  basemapUrl,
 }) {
   const color   = RISK_COLORS[alertLevel] || '#22c55e'
   const hasTiles = !!tiles
@@ -117,7 +144,6 @@ export default function Map({
 
   const [layers, setLayers] = useState({
     satellite: true,
-
     ndvi:      false,
     change:    false,
     risk:      false,
@@ -290,10 +316,13 @@ export default function Map({
         style={{ height: '100%', width: '100%' }}
         zoomControl={false}
       >
-        {layers.satellite ? (
+        {/* ── Basemap: GEE satellite or dark fallback ── */}
+        {basemapUrl && layers.satellite ? (
           <TileLayer
-            url="https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}"
-            attribution="Esri, Maxar"
+            key={basemapUrl}
+            url={basemapUrl}
+            attribution="Google Earth Engine / Sentinel-2"
+            opacity={1}
           />
         ) : (
           <TileLayer
@@ -302,6 +331,7 @@ export default function Map({
           />
         )}
 
+        {/* ── Analysis overlay layers ── */}
         {layers.ndvi   && tiles?.ndvi   && <TileLayer url={tiles.ndvi}   opacity={0.8} />}
         {layers.change && tiles?.change && <TileLayer url={tiles.change} opacity={0.8} />}
         {layers.risk   && tiles?.risk   && <TileLayer url={tiles.risk}   opacity={0.8} />}
@@ -316,11 +346,12 @@ export default function Map({
         <ClickHandler onMapClick={onMapClick} />
         {flyToPoint && <FlyTo point={flyToPoint} />}
 
-
+        {/* ── Forest name labels ── */}
         {FORESTS.map(f => (
           <Marker
             key={f.name}
             position={[f.lat, f.lng]}
+            icon={makeForestLabel(f.name)}
             eventHandlers={{ click: () => onMapClick(f.lat, f.lng) }}
           />
         ))}

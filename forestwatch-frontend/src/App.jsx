@@ -1,13 +1,12 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import Map                  from './components/Map'
 import StatsPanel           from './components/StatsPanel'
 import ComparePanel         from './components/ComparePanel'
 import AlertBadge           from './components/AlertBadge'
 import InsightPanel         from './components/InsightPanel'
-import AlertsPanel          from './components/AlertsPanel'
 import TimeSeriesPanel      from './components/TimeSeriesPanel'
 import SatelliteComparePanel from './components/SatelliteComparePanel'
-import { analyzeForest, compareForest, getMapTiles, getLatestAlerts } from './api'
+import { analyzeForest, compareForest, getMapTiles, getBasemap, getInsight } from './api'
 
 export default function App() {
   const [selectedPoint, setSelectedPoint] = useState(null)
@@ -24,11 +23,24 @@ export default function App() {
   const [error,         setError]         = useState(null)
   const [drawerOpen,    setDrawerOpen]    = useState(false)
   const [resultsOpen,   setResultsOpen]   = useState(false)
-  const [alertsData,    setAlertsData]    = useState(null)
-  const [alertsLoading, setAlertsLoading] = useState(false)
   const [showTimeSeries,   setShowTimeSeries]   = useState(false)
   const [showSatCompare,   setShowSatCompare]   = useState(false)
   const [flyToPoint,       setFlyToPoint]       = useState(null)
+  const [basemapUrl,       setBasemapUrl]       = useState(null)
+
+  // Search state
+  const [searchQuery,       setSearchQuery]       = useState('')
+  const [searchSuggestions, setSearchSuggestions] = useState([])
+  const [searchFocused,     setSearchFocused]     = useState(false)
+  const searchRef = useRef(null)
+
+  const SEARCH_FORESTS = [
+    { name: 'Mabira Forest',             lat:  0.45, lng: 32.95 },
+    { name: 'Budongo Forest',            lat:  1.73, lng: 31.55 },
+    { name: 'Kibale Forest',             lat:  0.50, lng: 30.36 },
+    { name: 'Bwindi Forest',             lat: -1.03, lng: 29.68 },
+    { name: 'Queen Elizabeth Nat. Park', lat: -0.20, lng: 29.90 },
+  ]
 
   const handleMapClick = (lat, lng) => {
     setSelectedPoint([lat, lng])
@@ -36,11 +48,41 @@ export default function App() {
     setFlyToPoint(null)
   }
 
-  const alertLevel = analyzeResult?.alert?.level
-                  || compareResult?.alert?.level
+  // Fetch GEE basemap on startup
+  useEffect(() => {
+    getBasemap()
+      .then(data => { if (data?.url) setBasemapUrl(data.url) })
+      .catch(() => {}) // fail silently — dark CartoDB fallback used
+  }, [])
+
+  // Search: update suggestions as user types
+  useEffect(() => {
+    const q = searchQuery.trim().toLowerCase()
+    if (!q) { setSearchSuggestions([]); return }
+    setSearchSuggestions(
+      SEARCH_FORESTS.filter(f => f.name.toLowerCase().includes(q))
+    )
+  }, [searchQuery])
+
+  const handleSearchSelect = (forest) => {
+    setFlyToPoint([forest.lat, forest.lng, 12])
+    setSearchQuery('')
+    setSearchSuggestions([])
+    setSearchFocused(false)
+  }
+
+  const handleSearchKeyDown = (e) => {
+    if (e.key === 'Enter' && searchSuggestions.length > 0) {
+      handleSearchSelect(searchSuggestions[0])
+    }
+    if (e.key === 'Escape') {
+      setSearchQuery('')
+      setSearchSuggestions([])
+    }
+  }
 
   useEffect(() => {
-    if (!selectedPoint || activeTab === 'alerts') return
+    if (!selectedPoint) return
     
     // Prevent compare fetch if years are not selected
     if (activeTab === 'compare' && (yearA === "" || yearB === "")) {
@@ -96,17 +138,6 @@ export default function App() {
 
   // showSatCompare is controlled only by the button in ComparePanel and the panel's
   // own close button — no automatic triggers.
-
-  // Fetch alerts when the alerts tab is selected
-  useEffect(() => {
-    if (activeTab !== 'alerts') return
-    setAlertsLoading(true)
-    setResultsOpen(true)
-    getLatestAlerts()
-      .then(data => setAlertsData(data.alerts))
-      .catch(() => setError('Could not load alerts. Is the backend running?'))
-      .finally(() => setAlertsLoading(false))
-  }, [activeTab])
 
 
   return (
@@ -243,9 +274,76 @@ export default function App() {
           zIndex: 1000,
           boxShadow: drawerOpen ? '0 8px 32px rgba(0,0,0,0.4)' : 'none',
         }}>
+          {/* Search Bar */}
+          <div ref={searchRef} style={{ padding: '12px 16px', borderBottom: '1px solid rgba(34,197,94,0.08)', position: 'relative' }}>
+            <div style={{ position: 'relative' }}>
+              <span style={{
+                position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)',
+                fontSize: 13, color: '#4b5563', pointerEvents: 'none',
+              }}>🔍</span>
+              <input
+                type="text"
+                placeholder="Search forests..."
+                value={searchQuery}
+                onChange={e => setSearchQuery(e.target.value)}
+                onFocus={() => setSearchFocused(true)}
+                onBlur={() => setTimeout(() => setSearchFocused(false), 150)}
+                onKeyDown={handleSearchKeyDown}
+                style={{
+                  width: '100%',
+                  padding: '9px 12px 9px 30px',
+                  background: 'rgba(34,197,94,0.08)',
+                  border: '1.5px solid rgba(34,197,94,0.25)',
+                  borderRadius: 8,
+                  color: '#e2f5e8',
+                  fontFamily: "'Inter', sans-serif",
+                  fontSize: 12,
+                  outline: 'none',
+                  boxSizing: 'border-box',
+                  transition: 'border-color 0.2s',
+                }}
+                onFocusCapture={e => e.target.style.borderColor = 'rgba(34,197,94,0.55)'}
+                onBlurCapture={e => e.target.style.borderColor = 'rgba(34,197,94,0.25)'}
+              />
+            </div>
+            {searchFocused && searchSuggestions.length > 0 && (
+              <div style={{
+                position: 'absolute',
+                top: '100%',
+                left: 16, right: 16,
+                background: 'rgba(6,13,7,0.97)',
+                border: '1px solid rgba(34,197,94,0.3)',
+                borderRadius: 8,
+                zIndex: 2000,
+                overflow: 'hidden',
+                boxShadow: '0 8px 24px rgba(0,0,0,0.5)',
+              }}>
+                {searchSuggestions.map(f => (
+                  <div
+                    key={f.name}
+                    onMouseDown={() => handleSearchSelect(f)}
+                    style={{
+                      padding: '10px 14px',
+                      cursor: 'pointer',
+                      fontFamily: "'Inter', sans-serif",
+                      fontSize: 12,
+                      color: '#4ade80',
+                      borderBottom: '1px solid rgba(34,197,94,0.08)',
+                      transition: 'background 0.15s',
+                    }}
+                    onMouseEnter={e => e.currentTarget.style.background = 'rgba(34,197,94,0.1)'}
+                    onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
+                  >
+                    🌿 {f.name}
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
           {/* Tabs */}
           <div style={{ display: 'flex', borderBottom: '1px solid rgba(34,197,94,0.08)', padding: '8px 0' }}>
-            {[['analyze', '🔍 Analyze'], ['compare', '📊 Compare'], ['alerts', '🔔 Alerts']].map(([key, label]) => (
+            {[['analyze', '🔍 Analyze'], ['compare', '📊 Compare']].map(([key, label]) => (
               <button key={key} onClick={() => setActiveTab(key)} style={{
                 flex: 1,
                 padding: '12px 16px',
@@ -262,8 +360,7 @@ export default function App() {
             ))}
           </div>
 
-          {/* Controls — hidden on alerts tab */}
-          {activeTab !== 'alerts' && (
+          {/* Controls */}
           <div style={{ padding: '16px', borderBottom: '1px solid rgba(34,197,94,0.08)' }}>
             {activeTab === 'analyze' ? (
               <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
@@ -387,7 +484,6 @@ export default function App() {
               </div>
             )}
           </div>
-          )}
         </div>
 
         {/* Secondary Drawer: Results Panel (Spawns to the right of the Control Drawer) */}
@@ -401,7 +497,7 @@ export default function App() {
           borderRight: '1px solid rgba(34,197,94,0.2)',
           display: 'flex',
           flexDirection: 'column',
-          transform: resultsOpen && (selectedPoint || loading || activeTab === 'alerts') ? 'translateX(0)' : 'translateX(-100%)',
+          transform: resultsOpen && (selectedPoint || loading) ? 'translateX(0)' : 'translateX(-100%)',
           transition: 'all 0.4s cubic-bezier(0.4, 0, 0.2, 1)',
           zIndex: 998, // Just behind main drawer
           backdropFilter: 'blur(10px)',
@@ -425,7 +521,7 @@ export default function App() {
               alignItems: 'center',
               gap: 8
             }}>
-              {loading || alertsLoading ? '⏳ PROCESSING' : activeTab === 'alerts' ? '🔔 AUTOMATED ALERTS' : '📋 ANALYSIS RESULTS'}
+              {loading ? '⏳ PROCESSING' : '📋 ANALYSIS RESULTS'}
             </div>
             <button onClick={() => setResultsOpen(false)} style={{
               background: 'transparent',
@@ -531,9 +627,6 @@ export default function App() {
               />
             )}
 
-            {activeTab === 'alerts' && (
-              <AlertsPanel alerts={alertsData} loading={alertsLoading} />
-            )}
           </div>
         </div>
 
@@ -541,12 +634,13 @@ export default function App() {
         <div style={{ flex: 1, position: 'relative' }}>
           <Map
             selectedPoint={selectedPoint}
-            alertLevel={alertLevel}
+            alertLevel={analyzeResult?.alert?.level || compareResult?.alert?.level}
             onMapClick={handleMapClick}
             radiusKm={radiusKm}
             tiles={tiles}
             tilesLoading={tilesLoading}
             flyToPoint={flyToPoint}
+            basemapUrl={basemapUrl}
           />
           
           {showTimeSeries && selectedPoint && activeTab === 'compare' && yearA !== "" && yearB !== "" && (

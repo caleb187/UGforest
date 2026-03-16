@@ -1,8 +1,6 @@
 import asyncio
-import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
-from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
@@ -12,13 +10,13 @@ from models import (
     AnalyzeRequest, AnalyzeResponse,
     CompareRequest, CompareResponse,
     ForestStats, RiskAlert,
-    AlertsResponse, ScanAlert,
     InsightRequest, InsightResponse,
 )
 from analyzer import (
     FORESTS, STAT_KEYS,
     analyze_location_gee as analyze,
     get_map_tiles,
+    get_basemap_tiles,
     uganda_risk_score,
     score_to_alert,
     km_to_area_ha,
@@ -26,25 +24,14 @@ from analyzer import (
     generate_forest_insight,
 )
 
-from scanner import start_scheduler, stop_scheduler, get_all_alerts, get_recent_alerts, run_weekly_scan
-
 # ============================================================================
 # APP
 # ============================================================================
-
-@asynccontextmanager
-async def lifespan(app):
-    """Start the weekly scanner on startup, stop on shutdown."""
-    start_scheduler()
-    yield
-    stop_scheduler()
-
 
 app = FastAPI(
     title="ForestWatch AI",
     description="AI-powered deforestation detection for Uganda",
     version="1.0.0",
-    lifespan=lifespan,
 )
 
 app.add_middleware(
@@ -79,7 +66,7 @@ def root():
         "system":  "ForestWatch AI",
         "status":  "online",
         "version": "1.0.0",
-        "endpoints": ["/analyze", "/compare", "/tiles", "/forests", "/alerts", "/alerts/latest", "/scan/trigger", "/health", "/docs"],
+        "endpoints": ["/analyze", "/compare", "/tiles", "/basemap", "/forests", "/health", "/docs"],
     }
 
 
@@ -222,26 +209,13 @@ def get_tiles(req: TilesRequest):
     return tiles
 
 
-# ============================================================================
-# ALERT ENDPOINTS
-# ============================================================================
-
-@app.get("/alerts", response_model=AlertsResponse)
-def list_alerts():
-    """Return all automated scan alerts, newest first."""
-    alerts = get_all_alerts()
-    return AlertsResponse(alerts=[ScanAlert(**a) for a in alerts], count=len(alerts))
-
-
-@app.get("/alerts/latest", response_model=AlertsResponse)
-def list_latest_alerts():
-    """Return alerts from the last 7 days."""
-    alerts = get_recent_alerts(days=7)
-    return AlertsResponse(alerts=[ScanAlert(**a) for a in alerts], count=len(alerts))
-
-
-@app.get("/scan/trigger")
-def trigger_scan():
-    """Manually trigger a forest scan (useful for testing)."""
-    threading.Thread(target=run_weekly_scan, daemon=True).start()
-    return {"status": "scan_started", "message": "Scan running in background. Check /alerts for results."}
+@app.get("/basemap")
+def get_basemap():
+    """Get a GEE tile URL for the Uganda-wide 2024 natural colour basemap."""
+    t0 = time.time()
+    try:
+        result = get_basemap_tiles()
+    except Exception as e:
+        raise HTTPException(500, f"Basemap generation failed: {e}")
+    print(f"✓ Basemap {time.time()-t0:.2f}s")
+    return result
