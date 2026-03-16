@@ -2,7 +2,7 @@ import AlertBadge from './AlertBadge'
 import StatBar   from './StatBar'
 import InsightPanel from './InsightPanel'
 
-export default function ComparePanel({ data, loading }) {
+export default function ComparePanel({ data, loading, onShowSat }) {
   if (loading) return (
     <div style={{ padding: 24, textAlign: 'center', animation: 'fadeUp 0.3s ease' }}>
       <div style={{
@@ -92,8 +92,8 @@ export default function ComparePanel({ data, loading }) {
       {/* Side by side year comparison */}
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
         {[
-          { year: data.year_a, stats: data.stats_a, label: 'BASELINE', emoji: '📍' },
-          { year: data.year_b, stats: data.stats_b, label: 'CURRENT',  emoji: '📊' },
+          { year: data.year_a, stats: data.stats_a, label: 'BASELINE YEAR', emoji: '📍' },
+          { year: data.year_b, stats: data.stats_b, label: 'COMPARE YEAR',  emoji: '📊' },
         ].map(({ year, stats, label, emoji }) => (
           <div key={year} style={{
             padding: '14px 16px',
@@ -132,6 +132,46 @@ export default function ComparePanel({ data, loading }) {
           </div>
         ))}
       </div>
+
+      {/* Satellite before/after launcher */}
+      {onShowSat && (
+        <button
+          onClick={onShowSat}
+          style={{
+            width:        '100%',
+            padding:      '13px 16px',
+            background:   'linear-gradient(135deg, rgba(34,197,94,0.12) 0%, rgba(22,163,74,0.08) 100%)',
+            border:       '1.5px solid rgba(34,197,94,0.45)',
+            borderRadius: 10,
+            color:        '#4ade80',
+            fontFamily:   "'Inter', sans-serif",
+            fontSize:     13,
+            fontWeight:   700,
+            cursor:       'pointer',
+            display:      'flex',
+            alignItems:   'center',
+            justifyContent: 'center',
+            gap:          8,
+            letterSpacing: 0.2,
+            transition:   'all 0.25s ease',
+            boxShadow:    '0 4px 16px rgba(34,197,94,0.08)',
+          }}
+          onMouseEnter={e => {
+            e.currentTarget.style.background   = 'linear-gradient(135deg, rgba(34,197,94,0.22) 0%, rgba(22,163,74,0.16) 100%)'
+            e.currentTarget.style.borderColor  = 'rgba(74,222,128,0.7)'
+            e.currentTarget.style.boxShadow    = '0 6px 24px rgba(34,197,94,0.18)'
+            e.currentTarget.style.transform    = 'translateY(-1px)'
+          }}
+          onMouseLeave={e => {
+            e.currentTarget.style.background   = 'linear-gradient(135deg, rgba(34,197,94,0.12) 0%, rgba(22,163,74,0.08) 100%)'
+            e.currentTarget.style.borderColor  = 'rgba(34,197,94,0.45)'
+            e.currentTarget.style.boxShadow    = '0 4px 16px rgba(34,197,94,0.08)'
+            e.currentTarget.style.transform    = 'translateY(0)'
+          }}
+        >
+          🛰️ View Before & After Satellite
+        </button>
+      )}
 
       {/* Change summary */}
       <div style={{

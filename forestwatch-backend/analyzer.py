@@ -138,17 +138,13 @@ def km_to_area_ha(radius_km: float) -> float:
 
 def _get_imagery(year: int, region):
     """Get satellite imagery — falls back S2 -> L8 -> L7 with standard band renaming."""
-    
+
     # Sentinel-2 (2015+)
     if year >= 2015:
         s2 = (ee.ImageCollection('COPERNICUS/S2_SR_HARMONIZED')
               .filterBounds(region)
               .filterDate(f'{year}-01-01', f'{year}-12-31')
               .filter(ee.Filter.lt('CLOUDY_PIXEL_PERCENTAGE', 20)))
-        
-        # Multiply by 0.0001 (S2 scale factor) to get true reflectance if needed, 
-        # but normalizedDifference handles any linear scale fine.
-        # We just rename to standard names so _ndvi always works.
         if s2.size().getInfo() > 0:
             return s2.median().select(['B4', 'B8'], ['Red', 'NIR']).clip(region)
 
@@ -158,17 +154,49 @@ def _get_imagery(year: int, region):
               .filterBounds(region)
               .filterDate(f'{year}-01-01', f'{year}-12-31')
               .filter(ee.Filter.lt('CLOUD_COVER', 20)))
-        
         if l8.size().getInfo() > 0:
             return l8.median().select(['SR_B4', 'SR_B5'], ['Red', 'NIR']).clip(region)
 
-    # Landsat 7 (Pre-2013 or as final fallback)
+    # Landsat 7 (pre-2013 or final fallback)
     l7 = (ee.ImageCollection('LANDSAT/LE07/C02/T1_L2')
           .filterBounds(region)
           .filterDate(f'{year}-01-01', f'{year}-12-31')
           .filter(ee.Filter.lt('CLOUD_COVER', 20)))
-    
     return l7.median().select(['SR_B3', 'SR_B4'], ['Red', 'NIR']).clip(region)
+
+
+def _get_natural_colour(year: int, region):
+    """Return a Sentinel-2 / Landsat true-colour RGB composite for the given year.
+
+    Band mapping (all kept in their original scale — vis params handle normalisation):
+      S2  : B4=Red, B3=Green, B2=Blue  (scale 0-10000)
+      L8  : SR_B4=Red, SR_B3=Green, SR_B2=Blue
+      L7  : SR_B3=Red, SR_B2=Green, SR_B1=Blue
+    """
+    # Sentinel-2 (2015+)
+    if year >= 2015:
+        s2 = (ee.ImageCollection('COPERNICUS/S2_SR_HARMONIZED')
+              .filterBounds(region)
+              .filterDate(f'{year}-01-01', f'{year}-12-31')
+              .filter(ee.Filter.lt('CLOUDY_PIXEL_PERCENTAGE', 20)))
+        if s2.size().getInfo() > 0:
+            return s2.median().select(['B4', 'B3', 'B2']).clip(region)
+
+    # Landsat 8 (2013+)
+    if year >= 2013:
+        l8 = (ee.ImageCollection('LANDSAT/LC08/C02/T1_L2')
+              .filterBounds(region)
+              .filterDate(f'{year}-01-01', f'{year}-12-31')
+              .filter(ee.Filter.lt('CLOUD_COVER', 20)))
+        if l8.size().getInfo() > 0:
+            return l8.median().select(['SR_B4', 'SR_B3', 'SR_B2']).clip(region)
+
+    # Landsat 7 (pre-2013 or final fallback)
+    l7 = (ee.ImageCollection('LANDSAT/LE07/C02/T1_L2')
+          .filterBounds(region)
+          .filterDate(f'{year}-01-01', f'{year}-12-31')
+          .filter(ee.Filter.lt('CLOUD_COVER', 20)))
+    return l7.median().select(['SR_B3', 'SR_B2', 'SR_B1']).clip(region)
 
 
 def _ndvi(image, year: int):
@@ -251,6 +279,11 @@ def get_map_tiles(lat: float, lng: float, year_a: int, year_b: int, radius_km: f
             except Exception:
                 return ""
 
+        # Natural-colour composites for the before/after satellite panel
+        nat_vis = {'min': 0, 'max': 3000, 'gamma': 1.4}
+        nc_a = _get_natural_colour(year_a, region)
+        nc_b = _get_natural_colour(year_b, region)
+
         result = {
             'ndvi': tile_url(ndvi_b, {
                 'min': 0, 'max': 0.9,
@@ -264,6 +297,8 @@ def get_map_tiles(lat: float, lng: float, year_a: int, year_b: int, radius_km: f
                 'min': 0, 'max': 3,
                 'palette': ['darkgreen', 'yellow', 'orange', 'red'],
             }),
+            'natural_a': tile_url(nc_a, nat_vis),
+            'natural_b': tile_url(nc_b, nat_vis),
             'year_a': year_a,
             'year_b': year_b,
         }
@@ -272,7 +307,7 @@ def get_map_tiles(lat: float, lng: float, year_a: int, year_b: int, radius_km: f
 
     except Exception as e:
         print(f"✗ Tile error: {e}")
-        return {'ndvi': '', 'change': '', 'risk': '',
+        return {'ndvi': '', 'change': '', 'risk': '', 'natural_a': '', 'natural_b': '',
                 'year_a': year_a, 'year_b': year_b, 'error': str(e)}
 
 

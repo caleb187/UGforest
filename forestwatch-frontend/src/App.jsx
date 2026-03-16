@@ -1,11 +1,12 @@
 import { useState, useEffect } from 'react'
-import Map          from './components/Map'
-import StatsPanel   from './components/StatsPanel'
-import ComparePanel from './components/ComparePanel'
-import AlertBadge   from './components/AlertBadge'
-import InsightPanel from './components/InsightPanel'
-import AlertsPanel  from './components/AlertsPanel'
-import TimeSeriesPanel from './components/TimeSeriesPanel'
+import Map                  from './components/Map'
+import StatsPanel           from './components/StatsPanel'
+import ComparePanel         from './components/ComparePanel'
+import AlertBadge           from './components/AlertBadge'
+import InsightPanel         from './components/InsightPanel'
+import AlertsPanel          from './components/AlertsPanel'
+import TimeSeriesPanel      from './components/TimeSeriesPanel'
+import SatelliteComparePanel from './components/SatelliteComparePanel'
 import { analyzeForest, compareForest, getMapTiles, getLatestAlerts } from './api'
 
 export default function App() {
@@ -25,11 +26,14 @@ export default function App() {
   const [resultsOpen,   setResultsOpen]   = useState(false)
   const [alertsData,    setAlertsData]    = useState(null)
   const [alertsLoading, setAlertsLoading] = useState(false)
-  const [showTimeSeries,setShowTimeSeries]= useState(false)
+  const [showTimeSeries,   setShowTimeSeries]   = useState(false)
+  const [showSatCompare,   setShowSatCompare]   = useState(false)
+  const [flyToPoint,       setFlyToPoint]       = useState(null)
 
   const handleMapClick = (lat, lng) => {
     setSelectedPoint([lat, lng])
     setShowTimeSeries(false)
+    setFlyToPoint(null)
   }
 
   const alertLevel = analyzeResult?.alert?.level
@@ -89,6 +93,9 @@ export default function App() {
 
     fetchData()
   }, [selectedPoint, activeTab, year, yearA, yearB, radiusKm])
+
+  // showSatCompare is controlled only by the button in ComparePanel and the panel's
+  // own close button — no automatic triggers.
 
   // Fetch alerts when the alerts tab is selected
   useEffect(() => {
@@ -517,7 +524,11 @@ export default function App() {
             )}
             
             {activeTab === 'compare' && compareResult && !loading && (
-              <ComparePanel data={compareResult} loading={loading} />
+              <ComparePanel
+                data={compareResult}
+                loading={loading}
+                onShowSat={() => setShowSatCompare(true)}
+              />
             )}
 
             {activeTab === 'alerts' && (
@@ -535,6 +546,7 @@ export default function App() {
             radiusKm={radiusKm}
             tiles={tiles}
             tilesLoading={tilesLoading}
+            flyToPoint={flyToPoint}
           />
           
           {showTimeSeries && selectedPoint && activeTab === 'compare' && yearA !== "" && yearB !== "" && (
@@ -545,6 +557,19 @@ export default function App() {
               endYear={yearB}
               radiusKm={radiusKm}
               onClose={() => setShowTimeSeries(false)}
+            />
+          )}
+          {showSatCompare && selectedPoint && tiles && compareResult && activeTab === 'compare' && (
+            <SatelliteComparePanel
+              yearA={yearA}
+              yearB={yearB}
+              statsA={compareResult.stats_a}
+              statsB={compareResult.stats_b}
+              tiles={tiles}
+              selectedPoint={selectedPoint}
+              radiusKm={radiusKm}
+              onClose={() => setShowSatCompare(false)}
+              onNavigate={(lat, lng) => setFlyToPoint([lat, lng])}
             />
           )}
         </div>

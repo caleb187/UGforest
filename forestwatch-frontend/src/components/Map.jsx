@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { MapContainer, TileLayer, Marker,
-         Circle, GeoJSON, useMapEvents } from 'react-leaflet'
+         Circle, GeoJSON, useMapEvents, useMap } from 'react-leaflet'
 import L from 'leaflet'
 
 delete L.Icon.Default.prototype._getIconUrl
@@ -89,10 +89,19 @@ function ClickHandler({ onMapClick }) {
   return null
 }
 
+function FlyTo({ point }) {
+  const map = useMap()
+  useEffect(() => {
+    if (point) map.flyTo(point, 16, { duration: 1.2 })
+  }, [point, map])
+  return null
+}
+
 export default function Map({
   selectedPoint, alertLevel,
   onMapClick, radiusKm,
-  tiles, tilesLoading
+  tiles, tilesLoading,
+  flyToPoint,
 }) {
   const color   = RISK_COLORS[alertLevel] || '#22c55e'
   const hasTiles = !!tiles
@@ -100,12 +109,9 @@ export default function Map({
   const [ugandaGeojson, setUgandaGeojson] = useState(null)
   
   useEffect(() => {
-    fetch('https://raw.githubusercontent.com/datasets/geo-countries/master/data/countries.geojson')
+    fetch('https://github.com/wmgeolab/geoBoundaries/raw/main/releaseData/gbOpen/UGA/ADM0/geoBoundaries-UGA-ADM0_simplified.geojson')
       .then(r => r.json())
-      .then(data => {
-        const ugandaFeature = data.features.find(f => f.properties.ADMIN === 'Uganda')
-        if (ugandaFeature) setUgandaGeojson(ugandaFeature)
-      })
+      .then(data => setUgandaGeojson(data))
       .catch(e => console.error("Failed to load Uganda GeoJSON:", e))
   }, [])
 
@@ -303,11 +309,12 @@ export default function Map({
         {ugandaGeojson && (
           <GeoJSON 
             data={ugandaGeojson} 
-            style={{ color: '#4ade80', weight: 1.5, fillOpacity: 0 }} 
+            style={{ color: '#22C55E', weight: 2, fill: false, opacity: 0.8 }} 
           />
         )}
 
         <ClickHandler onMapClick={onMapClick} />
+        {flyToPoint && <FlyTo point={flyToPoint} />}
 
 
         {FORESTS.map(f => (
